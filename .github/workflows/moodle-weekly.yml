@@ -1,0 +1,36 @@
+name: Weekly Moodle Deadline Report
+
+on:
+  schedule:
+    # Every Monday at 07:00 UTC — adjust to your timezone/preference.
+    - cron: "0 7 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r moodle-deadline-agent/requirements.txt
+
+      - name: Run agent and email report
+        env:
+          MOODLE_URL: ${{ secrets.MOODLE_URL }}
+          MOODLE_USERNAME: ${{ secrets.MOODLE_USERNAME }}
+          MOODLE_PASSWORD: ${{ secrets.MOODLE_PASSWORD }}
+          MOODLE_TOKEN: ${{ secrets.MOODLE_TOKEN }}
+          MOODLE_SERVICE: ${{ secrets.MOODLE_SERVICE }}
+          LOOKAHEAD_DAYS: ${{ secrets.LOOKAHEAD_DAYS }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python moodle-deadline-agent/agent.py --email
