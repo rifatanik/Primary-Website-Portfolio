@@ -1,13 +1,13 @@
-name: Weekly Moodle Deadline Report
+name: Daily Moodle to Notion Sync
 
 on:
   schedule:
-    # Every Monday at 07:00 UTC — adjust to your timezone/preference.
-    - cron: "0 7 * * 1"
+    # Every day at 07:00 UTC — adjust to your timezone/preference.
+    - cron: "0 7 * * *"
   workflow_dispatch: {}
 
 jobs:
-  report:
+  sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r moodle-deadline-agent/requirements.txt
 
-      - name: Run agent and email report
+      - name: Fetch Moodle deadlines and sync into Notion
         env:
           MOODLE_URL: ${{ secrets.MOODLE_URL }}
           MOODLE_USERNAME: ${{ secrets.MOODLE_USERNAME }}
@@ -27,10 +27,7 @@ jobs:
           MOODLE_TOKEN: ${{ secrets.MOODLE_TOKEN }}
           MOODLE_SERVICE: ${{ secrets.MOODLE_SERVICE }}
           LOOKAHEAD_DAYS: ${{ secrets.LOOKAHEAD_DAYS }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: python moodle-deadline-agent/agent.py --email
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: |
+          python moodle-deadline-agent/agent.py --json | python moodle-deadline-agent/notion_sync.py
