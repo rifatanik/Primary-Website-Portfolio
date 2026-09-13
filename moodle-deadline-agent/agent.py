@@ -13,10 +13,11 @@ never hardcode them in this file or commit them to git.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import smtplib
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 
@@ -53,11 +54,13 @@ class MoodleAPIError(RuntimeError):
 
 @dataclass
 class DeadlineItem:
+    event_id: str  # stable Moodle event id — use this to dedupe in downstream systems
     name: str
     course: str
     activity_type: str
     due: datetime
     url: str
+    overdue: bool = False
 
     @property
     def days_remaining(self) -> float:
@@ -74,6 +77,13 @@ class DeadlineItem:
         if days <= MEDIUM_PRIORITY_DAYS:
             return "MEDIUM"
         return "LOW"
+
+    def to_json_dict(self) -> dict:
+        d = asdict(self)
+        d["due"] = self.due.isoformat()
+        d["priority"] = self.priority
+        d["days_remaining"] = round(self.days_remaining, 2)
+        return d
 
 
 def get_token() -> str:
@@ -149,6 +159,7 @@ def fetch_deadlines(token: str) -> list[DeadlineItem]:
         course = (event.get("course") or {}).get("fullname", "Unknown course")
         items.append(
             DeadlineItem(
+                event_id=str(event.get("id", "")),
                 name=event.get("name", "Untitled"),
                 course=course,
                 activity_type=event.get("modulename", event.get("eventtype", "event")),
@@ -186,11 +197,13 @@ def fetch_overdue(token: str) -> list[DeadlineItem]:
         course = (event.get("course") or {}).get("fullname", "Unknown course")
         items.append(
             DeadlineItem(
+                event_id=str(event.get("id", "")),
                 name=event.get("name", "Untitled"),
                 course=course,
                 activity_type=event.get("modulename", event.get("eventtype", "event")),
                 due=due,
                 url=event.get("url", ""),
+                overdue=True,
             )
         )
     items.sort(key=lambda i: i.due)
@@ -267,9 +280,14 @@ def send_email(report: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Moodle weekly deadline organizer")
+    parser = argparse.ArgumentParser(description="Moodle deadline organizer")
     parser.add_argument("--email", action="store_true", help="Send the report via email (see .env.example)")
     parser.add_argument("--out", help="Write the report to this file path")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON ({upcoming: [...], overdue: [...]}) instead of the text report",
+    )
     args = parser.parse_args()
 
     try:
@@ -277,8 +295,23 @@ def main() -> int:
         deadlines = fetch_deadlines(token)
         overdue = fetch_overdue(token)
     except (MoodleAuthError, MoodleAPIError, requests.RequestException) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": str(exc)}))
+        else:
+            print(f"Error: {exc}", file=sys.stderr)
         return 1
+
+    if args.json:
+        payload = {
+            "upcoming": [item.to_json_dict() for item in deadlines],
+            "overdue": [item.to_json_dict() for item in overdue],
+        }
+        output = json.dumps(payload, indent=2)
+        print(output)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as f:
+                f.write(output)
+        return 0
 
     report = build_report(deadlines, overdue)
     print(report)
